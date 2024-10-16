@@ -1,0 +1,57 @@
+name: Sonatype Evaluate and SBOM Workflow
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/*'
+  workflow_dispatch:
+
+jobs:
+  sonatype:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Sonatype CLI
+        uses: sonatype/actions/setup-iq-cli@v1
+        with:
+          iq-cli-version: latest
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Checkout our code
+        id: checkout
+        uses: actions/checkout@v4
+
+      # Perform an evaluation 
+      - name: Run evaluate action
+        id: evaluate
+        uses: sonatype/actions/evaluate@v1
+        with:
+          iq-server-url: https://your.lifecycle.server
+          username: ${{ secrets.LIFECYCLE_USERNAME }}
+          password: ${{ secrets.LIFECYCLE_PASSWORD }}
+          application-id: lifecycle-app
+          scan-targets: package.json package-lock.json  # NPM !
+
+      # Print results
+      - name: Log evaluate action output
+        run: echo "${{ steps.evaluate.outputs.scan-id }} ${{ steps.evaluate.outputs.report-url }}"
+
+      # Fetch the SBOM file associated with the evaluation
+      - name: Fetch SBOM
+        uses: sonatype/actions/fetch-sbom@v1
+        if: ( success() || failure() ) && steps.evaluate.outputs.scan-id 
+        with:
+          iq-server-url: https://your.lifecycle.server
+          username: ${{ secrets.LIFECYCLE_USERNAME }}
+          password: ${{ secrets.LIFECYCLE_PASSWORD }}
+          application-id: lifecycle-app
+          scan-id: ${{ steps.evaluate.outputs.scan-id }}
+          sbom-standard: cyclonedx
+          sbom-version: 1.5
+          sbom-format: json
+          artifact-name: lifecycle-app-sbom.json
